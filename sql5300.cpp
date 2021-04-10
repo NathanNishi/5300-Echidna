@@ -35,6 +35,7 @@ string printSelectStatement(const SelectStatement *stmt) {
 		notFirst = true;
 	}
 	ret += " FROM " + tableRefExprToString(stmt->fromTable);
+	// FIXME - multiple tables in tableRef
 	if (stmt->whereClause != NULL) {
 		ret += " WHERE " + printExpr(stmt->whereClause);
 	}
@@ -63,7 +64,7 @@ string printInsertStatement(const InsertStatement* stmt) {
 
 /**
  * Converts the hyrise parse tree back into a SQL string
- * @param parseTree	hyrise parse tree pointer
+ * @param stmt	hyrise statement
  * @return 		SQL equivalent to parseTree
  */
 string execute(const SQLStatement *stmt) {
@@ -111,6 +112,20 @@ string execute(const SQLStatement *stmt) {
 
 string tableRefExprToString(const TableRef* table){
 	string ret;
+	// handle multiple FROM tables
+	if (table->list != NULL) {
+		bool firstFromTable = true;
+		for (TableRef* tbl : *table->list) {
+			if (!firstFromTable) {
+				ret += ", ";
+			}
+			else {
+				firstFromTable = false;
+			}
+			ret += tableRefExprToString(tbl);
+		}
+		return ret;
+	}
 	switch (table->type) {
 		case kTableName:
 			ret += table->name;
@@ -145,9 +160,6 @@ string tableRefExprToString(const TableRef* table){
 			ret += " UNSUPPORTED TYPE";
             break;
 	}
-	if (table->alias != NULL) {
-        ret += string(" Alias ") + table->alias;
-        }
 	return ret;
 }
 
@@ -159,7 +171,7 @@ string operatorExprToString(const Expr* expr){
     switch (expr->opType) {
     	case Expr::SIMPLE_OP:
     		//cout << "Simple Op DETECTED" << endl;
-    		ret += expr->opChar;
+    		ret += printExpr(expr->expr) + expr->opChar + printExpr(expr->expr2);
     		break; 
     	case Expr::AND:
         	//cout << "AND DETECTED" << endl;
@@ -214,8 +226,11 @@ string printExpr(const Expr *expression){
 		case kExprColumnRef:
             //cout << "Column Ref DETECTED" << endl;
             if(expression->table != NULL) {
-                ret += string(expression->table) + ".";
+                ret += string(expression->table) + "." + string(expression->name);
             }
+			else {
+				ret += string(expression->name);
+			}
             break;
         case kExprLiteralString:
             //cout << "String DETECTED" << endl;
@@ -246,9 +261,9 @@ string printExpr(const Expr *expression){
 
 
 int main(void) {
-        const char *home = getenv("HOME");
-        string envdir = string(home) + "/" + HOME;
-        cout<< "running with database environment at " << envdir << endl;
+	const char *home = getenv("HOME");
+	string envdir = string(home) + "/" + HOME;
+	cout<< "running with database environment at " << envdir << endl;
 
 	DbEnv env(0U);
 	env.set_message_stream(&std::cout);
@@ -283,17 +298,17 @@ int main(void) {
 	}
 
 	char block[BLOCK_SZ];
-        Dbt data(block, sizeof(block));
-    	int block_number;
-    	Dbt key(&block_number, sizeof(block_number));
-    	block_number = 1;
-    	strcpy(block, "Milestone1!");
-    	db.put(NULL, &key, &data, 0);  // write block #1 to the database
+	Dbt data(block, sizeof(block));
+	int block_number;
+	Dbt key(&block_number, sizeof(block_number));
+	block_number = 1;
+	strcpy(block, "Milestone1!");
+	db.put(NULL, &key, &data, 0);  // write block #1 to the database
 
-    	Dbt rdata;
-    	db.get(NULL, &key, &rdata, 0); // read block #1 from the database
-    	cout << "Read (block #" << block_number << "): '" << (char *)rdata.get_data() << "'";
-    	cout << " (expect 'Milestone1!')" << endl;
+	Dbt rdata;
+	db.get(NULL, &key, &rdata, 0); // read block #1 from the database
+	cout << "Read (block #" << block_number << "): '" << (char *)rdata.get_data() << "'";
+	cout << " (expect 'Milestone1!')" << endl;
 
-    	return EXIT_SUCCESS;
+	return EXIT_SUCCESS;
 }
