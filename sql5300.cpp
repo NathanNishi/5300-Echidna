@@ -24,6 +24,11 @@ string operatorExprToString(const Expr* expr);
 string printExpr(const Expr *expression);
 string columnDefiinitionToString(const ColumnDefinition* col);
 
+/**
+ * Convert the hyrise select statement into the equivalent string
+ * @param stmt  select statement to unparse
+ * @return     SQL string equivalent to *stmt
+ */
 string printSelectStatement(const SelectStatement *stmt) {
 	string ret("SELECT ");
 	bool notFirst = false;
@@ -35,13 +40,17 @@ string printSelectStatement(const SelectStatement *stmt) {
 		notFirst = true;
 	}
 	ret += " FROM " + tableRefExprToString(stmt->fromTable);
-	// FIXME - multiple tables in tableRef
 	if (stmt->whereClause != NULL) {
 		ret += " WHERE " + printExpr(stmt->whereClause);
 	}
 	return ret;
 }
 
+/**
+ * Convert the hyrise create statement into the equivalent string
+ * @param stmt  create statement to unparse
+ * @return     SQL string equivalent to *stmt
+ */
 string printCreateStatement(const CreateStatement* stmt){
 	string ret("CREATE TABLE ");
 	bool notFirst = false;
@@ -57,6 +66,11 @@ string printCreateStatement(const CreateStatement* stmt){
 	return ret;
 }
 
+/**
+ * Convert the hyrise insert statement into the equivalent string
+ * @param stmt  insert statement to unparse
+ * @return     SQL string equivalent to *stmt
+ */
 string printInsertStatement(const InsertStatement* stmt) {
 	string ret("INSERT ");
 	return ret;
@@ -110,6 +124,11 @@ string execute(const SQLStatement *stmt) {
 		}
 }
 
+/**
+ * Convert the hyrise table reference into the equivalent string
+ * @param table  TableRef to unparse
+ * @return     SQL string equivalent to *table
+ */
 string tableRefExprToString(const TableRef* table){
 	string ret;
 	// handle multiple FROM tables
@@ -163,6 +182,11 @@ string tableRefExprToString(const TableRef* table){
 	return ret;
 }
 
+/**
+ * Convert the hyrise operator Expression into the equivalent string
+ * @param expr  operator expression to unparse
+ * @return     SQL string equivalent to *expr
+ */
 string operatorExprToString(const Expr* expr){
 	string ret;
 	if (expr == NULL) {
@@ -216,6 +240,11 @@ string columnDefiinitionToString(const ColumnDefinition* col) {
     return ret;
 }
 
+/**
+ * Convert the hyrise Expression into the equivalent string
+ * @param expression  expression to unparse
+ * @return     SQL string equivalent to *expression
+ */
 string printExpr(const Expr *expression){
 	string ret;
 	switch (expression->type) {
@@ -265,6 +294,8 @@ int main(void) {
 	string envdir = string(home) + "/" + HOME;
 	cout<< "running with database environment at " << envdir << endl;
 
+
+	// create database
 	DbEnv env(0U);
 	env.set_message_stream(&std::cout);
 	env.set_error_stream(&std::cerr);
@@ -276,6 +307,7 @@ int main(void) {
 	db.set_re_len(BLOCK_SZ); // Set record length to 4K
 	db.open(NULL, MLESTONE1, NULL, DB_RECNO, DB_CREATE | DB_TRUNCATE, 0644); // Erases anything already there
 
+	// user input loop
 	cout << "quit to end" << endl;
 	string query;
 	while(true) {
