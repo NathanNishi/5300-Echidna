@@ -1,219 +1,157 @@
-// sql5300.cpp, Ben Gruher and Priyanka Patil, Seattle University, CPSC 5300, Spring 2021
-
+/**
+ * @file sql5300.cpp - main entry for the relation manaager's SQL shell
+ * @author Kevin Lundeen
+ * @see "Seattle University, cpsc4300/5300, Spring 2021"
+ */
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include "SQLParser.h"
+#include <cstring>
+#include <iostream>
+#include <string>
+#include <cassert>
 #include "db_cxx.h"
+#include "SQLParser.h"
 #include "sqlhelper.h"
-
-const char *HOME = "cpsc5300/data";
-const char *MLESTONE1 = "milestone1.db";
-const unsigned int BLOCK_SZ = 4096;
+#include "heap_storage.h"
 
 using namespace std;
 using namespace hsql;
 
-//method declarations
-string printSelectStatement(const SelectStatement *stmt);
-string printCreateStatement(const CreateStatement* stmt);
-string printInsertStatement(const InsertStatement* stmt);
-string execute(const SQLStatement *stmt);
-string tableRefExprToString(const TableRef* table);
-string operatorExprToString(const Expr* expr);
-string printExpr(const Expr *expression);
-string columnDefiinitionToString(const ColumnDefinition* col);
+/*
+ * we allocate and initialize the _DB_ENV global
+ */
+DbEnv *_DB_ENV;
+
+// forward declare
+string operatorExpressionToString(const Expr *expr);
 
 /**
- * Convert the hyrise select statement into the equivalent string
- * @param stmt  select statement to unparse
- * @return     SQL string equivalent to *stmt
+ * Convert the hyrise Expr AST back into the equivalent SQL
+ * @param expr expression to unparse
+ * @return     SQL equivalent to *expr
  */
-string printSelectStatement(const SelectStatement *stmt) {
-	string ret("SELECT ");
-	bool notFirst = false;
-	for (Expr* expr : *stmt->selectList) {
-		if(notFirst) {
-            ret += ", ";
-        } 
-		ret += printExpr(expr);
-		notFirst = true;
-	}
-	ret += " FROM " + tableRefExprToString(stmt->fromTable);
-	if (stmt->whereClause != NULL) {
-		ret += " WHERE " + printExpr(stmt->whereClause);
-	}
-	return ret;
-}
-
-/**
- * Convert the hyrise create statement into the equivalent string
- * @param stmt  create statement to unparse
- * @return     SQL string equivalent to *stmt
- */
-string printCreateStatement(const CreateStatement* stmt){
-	string ret("CREATE TABLE ");
-	bool notFirst = false;
-	ret += string(stmt->tableName) + " (";
-	for (ColumnDefinition* column : *stmt->columns) {
-        if(notFirst) {
-            ret += ", ";
-        }
-        ret += columnDefiinitionToString(column);
-        notFirst = true;
+string expressionToString(const Expr *expr) {
+    string ret;
+    switch (expr->type) {
+        case kExprStar:
+            ret += "*";
+            break;
+        case kExprColumnRef:
+            if (expr->table != NULL)
+                ret += string(expr->table) + ".";
+        case kExprLiteralString:
+            ret += expr->name;
+            break;
+        case kExprLiteralFloat:
+            ret += to_string(expr->fval);
+            break;
+        case kExprLiteralInt:
+            ret += to_string(expr->ival);
+            break;
+        case kExprFunctionRef:
+            ret += string(expr->name) + "?" + expr->expr->name;
+            break;
+        case kExprOperator:
+            ret += operatorExpressionToString(expr);
+            break;
+        default:
+            ret += "???";  // in case there are exprssion types we don't know about here
+            break;
     }
-    ret += ")";
-	return ret;
+    if (expr->alias != NULL)
+        ret += string(" AS ") + expr->alias;
+    return ret;
 }
 
 /**
- * Convert the hyrise insert statement into the equivalent string
- * @param stmt  insert statement to unparse
- * @return     SQL string equivalent to *stmt
+ * Convert the hyrise Expr AST for an operator expression back into the equivalent SQL
+ * @param expr operator expression to unparse
+ * @return     SQL equivalent to *expr
  */
-string printInsertStatement(const InsertStatement* stmt) {
-	string ret("INSERT ");
-	return ret;
+string operatorExpressionToString(const Expr *expr) {
+    if (expr == NULL)
+        return "null";
+
+    string ret;
+    // Unary prefix operator: NOT
+    if (expr->opType == Expr::NOT)
+        ret += "NOT ";
+
+    // Left-hand side of expression
+    ret += expressionToString(expr->expr) + " ";
+
+    // Operator itself
+    switch (expr->opType) {
+        case Expr::SIMPLE_OP:
+            ret += expr->opChar;
+            break;
+        case Expr::AND:
+            ret += "AND";
+            break;
+        case Expr::OR:
+            ret += "OR";
+            break;
+        default:
+            break; // e.g., for NOT
+    }
+
+    // Right-hand side of expression (only present for binary operators)
+    if (expr->expr2 != NULL)
+        ret += " " + expressionToString(expr->expr2);
+    return ret;
 }
 
 /**
- * Converts the hyrise parse tree back into a SQL string
- * @param stmt	hyrise statement
- * @return 		SQL equivalent to parseTree
+ * Convert the hyrise TableRef AST back into the equivalent SQL
+ * @param table  table reference AST to unparse
+ * @return       SQL equivalent to *table
  */
-string execute(const SQLStatement *stmt) {
-	string ret;
-	switch (stmt->type()) {
-		case kStmtSelect:{
-			//cout << "Select DETECTED" << endl;
-			const SelectStatement* selectStmt = (const SelectStatement *) stmt;
-			ret += printSelectStatement(selectStmt);
-      		return ret;
-      	}
-		case kStmtCreate:{
-			//cout << "Create DETECTED" << endl;
-			const CreateStatement* createStmt = (const CreateStatement *) stmt;
-			ret += printCreateStatement(createStmt);
-			return ret;
-		}
-		case kStmtInsert:{
-			//cout << "Insert DETECTED" << endl;
-			const InsertStatement* insertStmt = (const InsertStatement *) stmt;
-            ret += printInsertStatement(insertStmt);
-            return ret;
-        }
-        case kStmtDrop:{
-        	//cout << "Drop DETECTED" << endl;
-            ret += "DROP";
-            return ret;
-        }
-        case kStmtImport:{
-        	//cout << "Import DETECTED" << endl;
-        	ret += "IMPORT";
-        	return ret;
-        }
-        case kStmtShow:{
-        	//cout << "Show DETECTED" << endl;
-        	ret += "SHOW";
-        	return ret;
-        }
-        default:{
-            ret += "Not Recognized";
-            return ret;
-        }
-		}
-}
-
-/**
- * Convert the hyrise table reference into the equivalent string
- * @param table  TableRef to unparse
- * @return     SQL string equivalent to *table
- */
-string tableRefExprToString(const TableRef* table){
-	string ret;
-	// handle multiple FROM tables
-	if (table->list != NULL) {
-		bool firstFromTable = true;
-		for (TableRef* tbl : *table->list) {
-			if (!firstFromTable) {
-				ret += ", ";
-			}
-			else {
-				firstFromTable = false;
-			}
-			ret += tableRefExprToString(tbl);
-		}
-		return ret;
-	}
-	switch (table->type) {
-		case kTableName:
-			ret += table->name;
-			if (table->alias != NULL) {
+string tableRefInfoToString(const TableRef *table) {
+    string ret;
+    switch (table->type) {
+        case kTableSelect:
+            ret += "kTableSelect FIXME"; // FIXME
+            break;
+        case kTableName:
+            ret += table->name;
+            if (table->alias != NULL)
                 ret += string(" AS ") + table->alias;
-            }
-			break;
-		case kTableSelect:
-			ret += execute(table->select);
-			break;
-		case kTableJoin:
-			//cout << "JOIN Table ";
-			ret += tableRefExprToString(table->join->left);
-			switch (table->join->type) {
+            break;
+        case kTableJoin:
+            ret += tableRefInfoToString(table->join->left);
+            switch (table->join->type) {
+                case kJoinCross:
                 case kJoinInner:
                     ret += " JOIN ";
                     break;
+                case kJoinOuter:
+                case kJoinLeftOuter:
                 case kJoinLeft:
                     ret += " LEFT JOIN ";
                     break;
-                default:
-                    ret += " UNSUPPORTED JOIN";
+                case kJoinRightOuter:
+                case kJoinRight:
+                    ret += " RIGHT JOIN ";
+                    break;
+                case kJoinNatural:
+                    ret += " NATURAL JOIN ";
                     break;
             }
-            ret += tableRefExprToString(table->join->right);
-            // If there is a JOIN condition
-            if (table->join->condition != NULL) {
-                ret += " ON " + printExpr(table->join->condition);
-            }
-			break;
-		default:
-			ret += " UNSUPPORTED TYPE";
+            ret += tableRefInfoToString(table->join->right);
+            if (table->join->condition != NULL)
+                ret += " ON " + expressionToString(table->join->condition);
             break;
-	}
-	return ret;
-}
-
-/**
- * Convert the hyrise operator Expression into the equivalent string
- * @param expr  operator expression to unparse
- * @return     SQL string equivalent to *expr
- */
-string operatorExprToString(const Expr* expr){
-	string ret;
-	if (expr == NULL) {
-        return "null";
+        case kTableCrossProduct:
+            bool doComma = false;
+            for (TableRef *tbl : *table->list) {
+                if (doComma)
+                    ret += ", ";
+                ret += tableRefInfoToString(tbl);
+                doComma = true;
+            }
+            break;
     }
-    switch (expr->opType) {
-    	case Expr::SIMPLE_OP:
-    		//cout << "Simple Op DETECTED" << endl;
-    		ret += printExpr(expr->expr) + expr->opChar + printExpr(expr->expr2);
-    		break; 
-    	case Expr::AND:
-        	//cout << "AND DETECTED" << endl;
-        	ret += "AND";
-        	break;
-    	case Expr::OR:
-        	//cout << "OR DETECTED" << endl;
-        	ret += "OR";
-        	break;
-        case Expr::NOT:
-        	//cout << "NOT DETECTED" << endl;
-        	ret += "NOT";
-        	break;
-    	default:
-    		ret += expr->opType;
-        	break;
-	}
-	return ret;
+    return ret;
 }
 
 /**
@@ -221,7 +159,7 @@ string operatorExprToString(const Expr* expr){
  * @param col  column definition to unparse
  * @return     SQL equivalent to *col
  */
-string columnDefiinitionToString(const ColumnDefinition* col) {
+string columnDefinitionToString(const ColumnDefinition *col) {
     string ret(col->name);
     switch (col->type) {
         case ColumnDefinition::DOUBLE:
@@ -234,113 +172,134 @@ string columnDefiinitionToString(const ColumnDefinition* col) {
             ret += " TEXT";
             break;
         default:
-            ret += " UNSUPPORTED TYPE";
+            ret += " ...";
             break;
     }
     return ret;
 }
 
 /**
- * Convert the hyrise Expression into the equivalent string
- * @param expression  expression to unparse
- * @return     SQL string equivalent to *expression
+ * Execute an SQL select statement (but for now, just spit back the SQL)
+ * @param stmt  Hyrise AST for the select statement
+ * @returns     a string (for now) of the SQL statment
  */
-string printExpr(const Expr *expression){
-	string ret;
-	switch (expression->type) {
-		case kExprStar:
-            //cout << "* DETECTED" << endl;
-            ret += "*";
-            break;
-		case kExprColumnRef:
-            //cout << "Column Ref DETECTED" << endl;
-            if(expression->table != NULL) {
-                ret += string(expression->table) + "." + string(expression->name);
-            }
-			else {
-				ret += string(expression->name);
-			}
-            break;
-        case kExprLiteralString:
-            //cout << "String DETECTED" << endl;
-            ret += expression->name;
-            break;
-        case kExprLiteralInt:
-            //cout << "Int DETECTED" << endl;
-            ret += to_string(expression->ival);
-            break;
-        case kExprLiteralFloat:
-            //cout << "Float DETECTED" << endl;
-            ret += to_string(expression->fval);
-            break;
-        case kExprOperator:
-            //cout << "Operator DETECTED" << endl;
-            ret += operatorExprToString(expression);
-            break;
-        case kExprFunctionRef:
-      		ret += expression->name;
-      		break;
+string executeSelect(const SelectStatement *stmt) {
+    string ret("SELECT ");
+    bool doComma = false;
+    for (Expr *expr : *stmt->selectList) {
+        if (doComma)
+            ret += ", ";
+        ret += expressionToString(expr);
+        doComma = true;
+    }
+    ret += " FROM " + tableRefInfoToString(stmt->fromTable);
+    if (stmt->whereClause != NULL)
+        ret += " WHERE " + expressionToString(stmt->whereClause);
+    return ret;
+}
+
+/**
+ * Execute an SQL insert statement (but for now, just spit back the SQL)
+ * @param stmt  Hyrise AST for the insert statement
+ * @returns     a string (for now) of the SQL statment
+ */
+string executeInsert(const InsertStatement *stmt) {
+    return "INSERT ...";
+}
+
+/**
+ * Execute an SQL create statement (but for now, just spit back the SQL)
+ * @param stmt  Hyrise AST for the create statement
+ * @returns     a string (for now) of the SQL statment
+ */
+string executeCreate(const CreateStatement *stmt) {
+    string ret("CREATE TABLE ");
+    if (stmt->type != CreateStatement::kTable)
+        return ret + "...";
+    if (stmt->ifNotExists)
+        ret += "IF NOT EXISTS ";
+    ret += string(stmt->tableName) + " (";
+    bool doComma = false;
+    for (ColumnDefinition *col : *stmt->columns) {
+        if (doComma)
+            ret += ", ";
+        ret += columnDefinitionToString(col);
+        doComma = true;
+    }
+    ret += ")";
+    return ret;
+}
+
+/**
+ * Execute an SQL statement (but for now, just spit back the SQL)
+ * @param stmt  Hyrise AST for the statement
+ * @returns     a string (for now) of the SQL statment
+ */
+string execute(const SQLStatement *stmt) {
+    switch (stmt->type()) {
+        case kStmtSelect:
+            return executeSelect((const SelectStatement *) stmt);
+        case kStmtInsert:
+            return executeInsert((const InsertStatement *) stmt);
+        case kStmtCreate:
+            return executeCreate((const CreateStatement *) stmt);
         default:
-            //cout << "Unrecognized expression type!" << endl;
-            ret += "EXPRESSION NOT RECOGNIZED";
-            break;
-	}
-	return ret;
+            return "Not implemented";
+    }
 }
 
+/**
+ * Main entry point of the sql5300 program
+ * @args dbenvpath  the path to the BerkeleyDB database environment
+ */
+int main(int argc, char *argv[]) {
 
-int main(void) {
-	const char *home = getenv("HOME");
-	string envdir = string(home) + "/" + HOME;
-	cout<< "running with database environment at " << envdir << endl;
+    // Open/create the db enviroment
+    if (argc != 2) {
+        cerr << "Usage: cpsc5300: dbenvpath" << endl;
+        return 1;
+    }
+    char *envHome = argv[1];
+    cout << "(sql5300: running with database environment at " << envHome << ")" << endl;
+    DbEnv env(0U);
+    env.set_message_stream(&cout);
+    env.set_error_stream(&cerr);
+    try {
+        env.open(envHome, DB_CREATE | DB_INIT_MPOOL, 0);
+    } catch (DbException &exc) {
+        cerr << "(sql5300: " << exc.what() << ")";
+        exit(1);
+    }
+    _DB_ENV = &env;
 
+    // Enter the SQL shell loop
+    while (true) {
+        cout << "SQL> ";
+        string query;
+        getline(cin, query);
+        if (query.length() == 0)
+            continue;  // blank line -- just skip
+        if (query == "quit")
+            break;  // only way to get out
+        if (query == "test") {
+            cout << "test_heap_storage: " << (test_heap_storage() ? "ok" : "failed") << endl;
+            continue;
+        }
 
-	// create database
-	DbEnv env(0U);
-	env.set_message_stream(&std::cout);
-	env.set_error_stream(&std::cerr);
-	env.open(envdir.c_str(), DB_CREATE | DB_INIT_MPOOL, 0);
+        // use the Hyrise sql parser to get us our AST
+        SQLParserResult *result = SQLParser::parseSQLString(query);
+        if (!result->isValid()) {
+            cout << "invalid SQL: " << query << endl;
+            delete result;
+            continue;
+        }
 
-	Db db(&env, 0);
-	db.set_message_stream(env.get_message_stream());
-	db.set_error_stream(env.get_error_stream());
-	db.set_re_len(BLOCK_SZ); // Set record length to 4K
-	db.open(NULL, MLESTONE1, NULL, DB_RECNO, DB_CREATE | DB_TRUNCATE, 0644); // Erases anything already there
-
-	// user input loop
-	cout << "quit to end" << endl;
-	string query;
-	while(true) {
-		cout << "SQL>  ";
-		getline(cin, query);
-		if(query == "quit") {
-			return 1;
-		}
-		// parse query to get parse tree
-		SQLParserResult* parseTree = SQLParser::parseSQLString(query);
-		// check that parse tree is valid
-		if (parseTree->isValid()) {
-			for (size_t i = 0; i < parseTree->size(); i++) {
-			cout << execute(parseTree->getStatement(i)) << endl;
-			}
-		} else {
-			// print error message
-			cout << "Invalid SQL: " << query << endl;
-		}
-	}
-
-	char block[BLOCK_SZ];
-	Dbt data(block, sizeof(block));
-	int block_number;
-	Dbt key(&block_number, sizeof(block_number));
-	block_number = 1;
-	strcpy(block, "Milestone1!");
-	db.put(NULL, &key, &data, 0);  // write block #1 to the database
-
-	Dbt rdata;
-	db.get(NULL, &key, &rdata, 0); // read block #1 from the database
-	cout << "Read (block #" << block_number << "): '" << (char *)rdata.get_data() << "'";
-	cout << " (expect 'Milestone1!')" << endl;
-
-	return EXIT_SUCCESS;
+        // execute the statement
+        for (uint i = 0; i < result->size(); ++i) {
+            cout << execute(result->getStatement(i)) << endl;
+        }
+        delete result;
+    }
+    return EXIT_SUCCESS;
 }
+
