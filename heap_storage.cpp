@@ -220,7 +220,7 @@ void HeapTable::create(void) {
 void HeapTable::create_if_not_exists(void) {
     try {
         this->open();
-    } catch (DbRelationError e) {
+    } catch (DbRelationError const&) {
         this->create();
     }
 }
@@ -301,7 +301,6 @@ Handle HeapTable::append(const ValueDict *row) {
     u_int16_t record_id;
     try {
         record_id = block->add(data);
-    } catch (DbRelationError) {
     } catch (DbRelationError const&) {
         block = this->file.get_new();
         record_id = block->add(data);
