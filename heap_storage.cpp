@@ -7,13 +7,17 @@
 #include "storage_engine.h"
 #include "heap_storage.h"
 #include <cstdint>
+
 using namespace std;
 typedef uint16_t u16;
 
-int DB_BLOCK_SIZE = 4096;
 /*
 SlottedPage class implementation
 */
+/*
+ * we allocate and initialize the _DB_ENV global
+ */
+//DbEnv *_DB_ENV;
 
 SlottedPage::SlottedPage(Dbt &block, BlockID block_id, bool is_new) : DbBlock(block, block_id, is_new) {
     if (is_new) {
@@ -135,9 +139,10 @@ void *SlottedPage::address(u_int16_t offset) {
         for buffer management and file management.
         Uses SlottedPage for storing records within blocks.
  */
+
 void HeapFile::create(void) {
     this->db_open(DB_CREATE | DB_EXCL);
-    SlottedPage *blockPage = get_new();
+    SlottedPage *blockPage = this->get_new();
     delete blockPage;
 }
 
@@ -207,13 +212,10 @@ void HeapFile::db_open(uint flags) {
 /**
  * @class HeapTable - Heap storage engine (implementation of DbRelation)
  */
-HeapTable::HeapTable(Identifier table_name, ColumnNames column_names, ColumnAttributes column_attributes) : DbRelation(table_name, column_names, column_attributes) {
-    this->file = new HeapFile(table_name);
-}
+HeapTable::HeapTable(Identifier table_name, ColumnNames column_names, ColumnAttributes column_attributes) : DbRelation(table_name, column_names, column_attributes), file(table_name) {}
 
 void HeapTable::create(void) {
     this->file.create();
-
 }
 
 void HeapTable::create_if_not_exists(void) {
@@ -241,9 +243,21 @@ Handle HeapTable::insert(const ValueDict *row) {
     return this->append(this->validate(row));
 }
 
-//void update(const Handle handle, const ValueDict *new_values);
+void HeapTable::update(const Handle handle, const ValueDict *new_values) {
+    //Not in milestone2
+}
 
-// void del(const Handle handle);
+void HeapTable::del(const Handle handle) {
+    //Not in milestone2
+}
+
+ValueDict* HeapTable::project(Handle handle) {
+    //Not in milestone2
+}
+
+ValueDict* HeapTable::project(Handle handle, const ColumnNames *column_names) {
+    //Not in milestone2
+}
 
 Handles* HeapTable::select(void) {
     Handles* handles = new Handles();
@@ -274,10 +288,6 @@ Handles* HeapTable::select(const ValueDict *where) {
     delete block_ids;
     return handles;
 }
-
-// ValueDict *project(Handle handle);
-
-// ValueDict *project(Handle handle, const ColumnNames *column_names);
 
 ValueDict* HeapTable::validate(const ValueDict *row) {
     ValueDict tempRow = *row;
