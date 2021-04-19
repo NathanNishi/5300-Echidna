@@ -19,6 +19,8 @@ SlottedPage class implementation
  */
 //DbEnv *_DB_ENV;
 
+const u16 DELETED_RECORD_SIZE = -1;
+
 SlottedPage::SlottedPage(Dbt &block, BlockID block_id, bool is_new) : DbBlock(block, block_id, is_new) {
     if (is_new) {
         this->num_records = 0;
@@ -43,44 +45,45 @@ RecordID SlottedPage::add(const Dbt *data) {
 }
 
 Dbt *SlottedPage::get(RecordID record_id) {
-    // check header for location and size of record
-    u16 recordSizeLoc = record_id * 4;
-    u16 recordLocationLoc = recordSizeLoc + 2;
-    u16 size = get_n(recordSizeLoc);
-    u16 loc = get_n(recordLocationLoc);
-    
-    Dbt* retDbt = new Dbt(this->address(loc), size);
-    return retDbt;
+    u16 recordSize, recordLocation;
+    get_header(recordSize, recordLocation, record_id);
 
-    /*
-    Maybe a more efficient way to do it:
-    u16 size;
-    u16 loc;
-    get_header(size, loc, record_id);
-    return Dbt(loc, size);
-    */    
+    if (recordSize == DELETED_RECORD_SIZE) {        // this is just a tombstone, record has been deleted
+        return nullptr;
+    }
+    return new Dbt(this->address(recordLocation), recordSize);
 }
 
 void SlottedPage::put(RecordID record_id, const Dbt &data) {
-    // FIXME - TODO: implement
-    // 1. check that updated size (if it is an increase) still fits
     u16 oldSize;
     u16 oldLoc;
     get_header(oldSize, oldLoc, record_id); // gets the old size and location
-    if (data.get_size() > oldSize) {       // indicates an increase in record size
+    u16 newSize = data.get_size();
+    if (newSize > oldSize) {                // indicates an increase in record size
         u16 sizeIncrease = data.get_size() - oldSize;
         if (!has_room(sizeIncrease - 4))    // checks if the block has room for the increase in size (minus the 4 byte header that already exists)
             throw DbBlockNoRoomError("not enough room for updated record");
+        slide(oldLoc, oldLoc - sizeIncrease);
+        memcpy(this->address(oldLoc - sizeIncrease), data.get_data(), newSize);
     }
-    // 2. update record (slide)
-    // 3. update header
-
+    else {
+        u16 sizeDecrease = oldSize - data.get_size();
+        memcpy(this->address(oldLoc + sizeDecrease), data.get_data(), newSize);
+        slide(oldLoc, oldLoc + sizeDecrease);
+    }
+    u16 size, newLoc;
+    get_header(size, newLoc, record_id);
+    put_header(record_id, newSize, newLoc);
 }
 
 void SlottedPage::del(RecordID record_id) {
-    // FIXME - TODO: implement
     // set header size to -1 and set pointer to the same as the previous record
-    // remove the record from the block (slide others?)
+    u16 recordSize, recordLoc;
+    get_header(recordSize, recordLoc, record_id);
+    put_header(record_id, DELETED_RECORD_SIZE, recordLoc+recordSize);
+
+    // remove record by sliding over previous records
+    slide(recordLoc, recordLoc + recordSize);
 }
 
 RecordIDs *SlottedPage::ids(void) {
@@ -109,14 +112,36 @@ void SlottedPage::put_header(RecordID id, u_int16_t size, u_int16_t loc) {
 }
 
 bool SlottedPage::has_room(u_int16_t size) {
+    if (size > this->end_free) {                                // since these integers are unsigned, they can't handle negative values. If size > this_end free, there is no room in the block (even without the header)
+        return false;
+    }
     u16 currentHeaderLocation = 4 + (this->num_records * 4);    // current end of header section (each header entry = 4 bytes and beginning entry of 4 bytes)
     u16 newHeaderLocation = currentHeaderLocation + 4;          // new end of header section (with new header of 4 bytes)
-    u16 newEndOfFreeSpace = this->end_free - size;
-    return newEndOfFreeSpace >= newHeaderLocation;              // FIXME - maybe just a > ? 
+    u16 newEndOfFreeSpace = this->end_free + 1 - size;          // where the new end of free space would be if record is added
+    return newEndOfFreeSpace >= newHeaderLocation;              // checks to see if new record would collide with header
 }
 
 void SlottedPage::slide(u_int16_t start, u_int16_t end) {
-    // FIXME - TODO: implement
+    int shift = end - start;
+    if (shift == 0) return;
+    // write the data
+    void* startCopyLocation = this->address(this->end_free + shift);
+    void* dataStartLocation = this->address(this->end_free); 
+    int size = start - this->end_free;
+    memcpy(startCopyLocation, dataStartLocation, size); 
+
+    // fix headers
+    RecordIDs ids = *this->ids();
+    for (int i = 0; i < ids.size(); i++) {
+        u16 size, loc;
+        get_header(size, loc, ids[i]);
+        if (loc <= start) {
+            loc += shift;
+            put_header(ids[i], size, loc);
+        }
+    }
+    this->end_free += shift;
+    put_header();
 }
 
 u_int16_t SlottedPage::get_n(u_int16_t offset) {
