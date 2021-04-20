@@ -246,7 +246,8 @@ void HeapTable::create(void) {
 void HeapTable::create_if_not_exists(void) {
     try {
         this->open();
-    } catch (DbRelationError const&) {
+    } catch (DbException const e)//(DbRelationError const&)
+    {
         this->create();
     }
 }
