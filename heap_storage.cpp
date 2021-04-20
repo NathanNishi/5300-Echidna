@@ -246,7 +246,7 @@ void HeapTable::create(void) {
 void HeapTable::create_if_not_exists(void) {
     try {
         this->open();
-    } catch (DbException const e)//(DbRelationError const&)
+    } catch (DbException &e)//(DbRelationError const&)
     {
         this->create();
     }
@@ -425,8 +425,6 @@ bool test_heap_storage() {
     std::cout << "insert ok" << std::endl;
     Handles* handles = table.select();
     std::cout << "select ok " << handles->size() << std::endl;
-    ValueDict *result = table.project((*handles)[0]);
-    std::cout << "project ok" << std::endl;
     Value value = (*result)["a"];
     if (value.n != 12)
         return false;
