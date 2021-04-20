@@ -29,3 +29,9 @@ $ ./sql5300 ~/cpsc5300/data
 $ SQL> test
 
 Note: make sure to delete the contents of ~/cpsc5300/data between each run or File Exists DbException will occur.
+Use the following commands to empty data folder
+$ rm -f ~/cpsc5300/data/*
+
+Milestone2 status:
+All functionality is currently working for Milestone2 except for the select() method. Select() method causes seg fault.
+
