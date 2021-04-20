@@ -16,4 +16,16 @@ $ cd 5300-Echidna
 
 $ make
 
-$ ./sql5300 /cpsc5300/data
+$ ./sql5300 ~/cpsc5300/data
+
+$ SQL> *enter SQL command here to see parser output*
+
+To run milestone2 on cs1:
+
+$ make
+
+$ ./sql5300 ~/cpsc5300/data
+
+$ SQL> test
+
+Note: make sure to delete the contents of ~/cpsc5300/data between each run or File Exists DbException will occur.
