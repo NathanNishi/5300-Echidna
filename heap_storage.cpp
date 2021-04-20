@@ -1,3 +1,7 @@
+/**
+ * @file heap_storage.cpp - Implementation of Heap_storage as per milestone2.
+ * @author Priyanka Patil and Benjamin Gruher
+ */
 #include <vector>
 #include "db_cxx.h"
 #include <cstring>
@@ -14,10 +18,6 @@ typedef uint16_t u16;
 /*
 SlottedPage class implementation
 */
-/*
- * we allocate and initialize the _DB_ENV global
- */
-//DbEnv *_DB_ENV;
 
 const u16 DELETED_RECORD_SIZE = -1;
 
@@ -436,4 +436,3 @@ bool test_heap_storage() {
 
     return true;
 }
-
