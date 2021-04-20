@@ -35,7 +35,7 @@ Use the following commands to empty data folder
 $ rm -f ~/cpsc5300/data/*
 
 
-Spring 1 Handoff Video:
+Sprint 1 Handoff Video:
 
 https://user-images.githubusercontent.com/49925867/115344024-947c3600-a161-11eb-94fd-1de4e2958235.mp4
 
