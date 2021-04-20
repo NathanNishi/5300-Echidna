@@ -35,3 +35,7 @@ $ rm -f ~/cpsc5300/data/*
 Milestone2 status:
 All functionality is currently working for Milestone2 except for the select() method. Select() method causes seg fault.
 
+Spring 1 Handoff Video:
+
+https://user-images.githubusercontent.com/49925867/115344024-947c3600-a161-11eb-94fd-1de4e2958235.mp4
+
