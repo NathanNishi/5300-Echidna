@@ -173,7 +173,7 @@ void HeapFile::create(void) {
 
 void HeapFile::drop(void) {
     this->close();
-    db.remove(this->dbfilename.c_str(), nullptr, 0);
+    this->closed = true;
 }
 
 void HeapFile::open(void) {
@@ -414,7 +414,7 @@ bool test_heap_storage() {
 
     HeapTable table("_test_data_cpp", column_names, column_attributes);
     table.create_if_not_exists();
-    std::cout << "create_if_not_exsts ok" << std::endl;
+    std::cout << "create_if_not_exists ok" << std::endl;
 
     ValueDict row;
     row["a"] = Value(12);
