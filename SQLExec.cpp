@@ -185,13 +185,62 @@ QueryResult *SQLExec::drop(const DropStatement *statement) {
 }
 
 QueryResult *SQLExec::show(const ShowStatement *statement) {
-    return new QueryResult("not implemented"); // FIXME
+    switch(statement->type){
+        case ShowStatement::kTables:
+            return show_tables();
+        case ShowStatement::kColumns:
+            return show_columns(statement);
+        default:
+            throw SQLExecError("not a valid show statement/type");
+    }
 }
 
 QueryResult *SQLExec::show_tables() {
-    return new QueryResult("not implemented"); // FIXME
+    ColumnNames *col_names = new ColumnNames();
+    col_names->push_back("table_name");
+    ColumnAttributes *col_attrs = new ColumnAttributes();
+    col_attrs->push_back(ColumnAttribute(ColumnAttribute::TEXT));
+
+    Handles *tbl_handles = SQLExec::tables->select();
+    ValueDicts *rows = new ValueDicts;
+
+    for(auto const &handle: *tbl_handles){
+        ValueDict *row = SQLExec::tables->project(handle,col_names);
+        Identifier table_name = row->at("table_name").s;
+
+        if(table_name != Tables::TABLE_NAME && table_name != Columns::TABLE_NAME){
+            rows->push_back(row);
+        }
+    }
+    delete tbl_handles;
+
+    string retsize = to_string(rows->size());
+    return new QueryResult(col_names,col_attrs,rows,"successfully returned " + retsize + " rows");
+
 }
 
 QueryResult *SQLExec::show_columns(const ShowStatement *statement) {
-    return new QueryResult("not implemented"); // FIXME
+    DbRelation &cols = SQLExec::tables->get_table(Columns::TABLE_NAME);
+
+    Identifier table_name = statement->tableName;
+    ValueDict where;
+    where["table_name"] = table_name;
+
+    Handles *colmn_handles = cols.select(&where);
+
+    ColumnNames *col_names = new ColumnNames();
+    col_names->push_back("table_name");
+    col_names->push_back("column_name");
+    col_names->push_back("data_type");
+    ColumnAttributes *col_attrs = new ColumnAttributes();
+    col_attrs->push_back(ColumnAttribute(ColumnAttribute::TEXT));
+
+    ValueDicts *rows = new ValueDicts;
+
+    for(auto const &handle: *colmn_handles){
+        ValueDict *row = cols.project(handle,col_names);
+        rows->push_back(row);
+    }
+    string retsize = to_string(rows->size());
+    return new QueryResult(col_names,col_attrs,rows,"successfully returned " + retsize + " rows");
 }
